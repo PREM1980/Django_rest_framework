@@ -23,7 +23,11 @@ urlpatterns = patterns('',
     
     (r'^register/success/$',direct_to_template,{'template':'registration/register_success.html'}),
     
-    (r'^save/$',bookmark_save_page)
+    (r'^save/$',bookmark_save_page),
+    (r'^tag/([^\s]+)/$', tag_page),
+    (r'^tag/$', tag_cloud_page),
+    (r'^search/$', search_page),
+    
     # url(r'^$', 'django_bookmarks.views.home', name='home'),
     #url(r'^django_bookmarks/', include('django_bookmarks.foo.urls')),
 
