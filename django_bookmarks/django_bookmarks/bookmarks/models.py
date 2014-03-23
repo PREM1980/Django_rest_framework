@@ -13,13 +13,25 @@ class Bookmark(models.Model):
     user = models.ForeignKey(User)
     link = models.ForeignKey(Link)
     def __unicode__(self):
-        return u'%s, %s' % (self.user.username, self.link.url)    
+        return u'%s, %s %s' % (self.user.username, self.link.url, self.title)
+    
+    def get_absolute_url(self):
+        return self.link.url    
     
 class Tag(models.Model):
     name = models.CharField(max_length=64,unique=True)
     bookmarks = models.ManyToManyField(Bookmark)
     def __unicode__(self):
         return self.name
+
+class SharedBookmark(models.Model):
+    bookmark = models.ForeignKey(Bookmark, unique=True)
+    date = models.DateTimeField(auto_now_add=True)
+    votes = models.IntegerField(default=1)
+    users_voted = models.ManyToManyField(User)
+
+    def __unicode__(self):
+        return u'%s, %s' % (self.bookmark, self.votes)
     
 class Reporter(models.Model):
     first_name = models.CharField(max_length=30)
@@ -41,13 +53,6 @@ class Article(models.Model):
     class Meta:
         ordering = ('headline',)
 
-class Department(models.Model):
-    dept_name = models.CharField(max_length=100)
-                
-class Employee(models.Model):
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
-    email = models.EmailField()
-    dept = models.ForeignKey(Department)
+
     
 

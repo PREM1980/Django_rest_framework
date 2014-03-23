@@ -12,23 +12,34 @@ from django_bookmarks.bookmarks.models import *
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404
 
+#def main_page(request):
+#    return render_to_response(
+#    'main_page.html',RequestContext(request)
+#    )
+
 def main_page(request):
-    return render_to_response(
-    'main_page.html',RequestContext(request)
-    )
+    shared_bookmarks = SharedBookmark.objects.order_by(
+    '-date'
+    )[:10]
+    variables = RequestContext(request, {
+    'shared_bookmarks': shared_bookmarks
+    }) 
+    return render_to_response('main_page.html', variables)
+
 
 
 def user_page(request, username):
     user = get_object_or_404(User, username=username)
     bookmarks = user.bookmark_set.order_by('-id')
+    print 'bookmarks = ', bookmarks
     variables = RequestContext(request, {
     'bookmarks': bookmarks,
     'username': username,
     'show_tags': True,
     'show_edit': username == request.user.username,
     })
-    return render_to_response('user_page.html', variables)
 
+    return render_to_response('user_page.html', variables)
 def logout_page(request):
     logout(request)
     return HttpResponseRedirect('/')
@@ -152,10 +163,20 @@ def search_page(request):
         show_results = True
         query = request.GET['query'].strip()
         if query:
-            form = SearchForm({'query' : query}) 
-            bookmarks = Bookmark.objects.filter(
-            title__icontains=query
-            )[:10]
+#            form = SearchForm({'query' : query}) 
+#            bookmarks = Bookmark.objects.filter(
+#            title__icontains=query
+#            )[:10]
+            from django.db.models import Q
+            
+            keywords = query.split()
+            q = Q()
+            for keyword in keywords:
+                q = q & Q(title__icontains=keyword)
+
+            form = SearchForm({'query' : query})
+            bookmarks = Bookmark.objects.filter(q)[:10]
+      
     variables = RequestContext(request, {
         'form': form,
         'bookmarks': bookmarks,
@@ -170,11 +191,13 @@ def search_page(request):
                 
 def _bookmark_save(request,form):
     # Create or get link.
+    print 'form.cleaned_data[url] = ', form.cleaned_data['url']
     link, dummy = Link.objects.get_or_create(
         url=form.cleaned_data['url']
       )
     # Create or get bookmark.
     bookmark, created = Bookmark.objects.get_or_create(
+        title = form.cleaned_data['title'],
         user=request.user,
         link=link
       )
@@ -184,10 +207,72 @@ def _bookmark_save(request,form):
     if not created:
         bookmark.tag_set.clear()
       # Create new tag list.
-        tag_names = form.cleaned_data['tags'].split()
-        for tag_name in tag_names:
-            tag, dummy = Tag.objects.get_or_create(name=tag_name)
-            bookmark.tag_set.add(tag)
+    tag_names = form.cleaned_data['tags'].split()
+    for tag_name in tag_names:
+        tag, dummy = Tag.objects.get_or_create(name=tag_name)
+        bookmark.tag_set.add(tag)
       # Save boojkmark to database and return it.
         bookmark.save()
-    return bookmark                
+    if form.cleaned_data['share']:
+        shared, created = SharedBookmark.objects.get_or_create(bookmark=bookmark)
+    if created:
+        shared.users_voted.add(request.user)
+        shared.save()
+    return bookmark         
+
+def ajax_tag_autocomplete(request):
+    if 'q' in request.GET:
+        print 'ajax_tag_autocomplete'
+        tags = Tag.objects.filter(
+                    name__istartswith=request.GET['q']
+                    )[:10]
+        return HttpResponse(u'\n'.join(tag.name for tag in tags))
+    return HttpResponse()
+  
+@login_required
+def bookmark_vote_page(request):
+    if 'id' in request.GET:
+        try:
+            id = request.GET['id']
+            shared_bookmark = SharedBookmark.objects.get(id=id)
+            user_voted = shared_bookmark.users_voted.filter(
+                        username=request.user.username
+                        )
+            if not user_voted:
+                shared_bookmark.votes += 1
+                shared_bookmark.users_voted.add(request.user)
+                shared_bookmark.save()
+        except SharedBookmark.DoesNotExist:
+            raise Http404('Bookmark not found.')
+
+    if 'HTTP_REFERER' in request.META:
+        return HttpResponseRedirect(request.META['HTTP_REFERER'])
+
+    return HttpResponseRedirect('/')        
+
+def popular_page(request):
+    from datetime import datetime, timedelta
+    today = datetime.today()
+    yesterday = today - timedelta(1)
+
+    shared_bookmarks = SharedBookmark.objects.filter(
+    date__gt=yesterday
+  )
+    shared_bookmarks = shared_bookmarks.order_by(
+    '-votes'
+  )[:10]
+
+    variables = RequestContext(request, {
+    'shared_bookmarks': shared_bookmarks
+    }) 
+    return render_to_response('popular_page.html', variables)
+
+def bookmark_page(request, bookmark_id):
+    shared_bookmark = get_object_or_404(
+                                        SharedBookmark,
+                                        id=bookmark_id
+                                        )
+    variables = RequestContext(request, {
+                                         'shared_bookmark': shared_bookmark
+                                         })
+    return render_to_response('bookmark_page.html', variables)
